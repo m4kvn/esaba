@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/nlopes/slack"
 	"github.com/joho/godotenv"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"regexp"
 	"fmt"
+	"database/sql"
 )
 
 func main() {
@@ -48,16 +50,68 @@ func main() {
 					log.Printf("%#v\n", ev)
 				} else {
 					regexStr := fmt.Sprintf(`^(<@%s> 神降臨)$`, client.UserID)
-					if regexp.MustCompile(regexStr).MatchString(ev.Text) {
-						isStart = true
-						channel = ev.Channel
+					if !regexp.MustCompile(regexStr).MatchString(ev.Text) {
+						break
 					}
+					isStart = true
+					channel = ev.Channel
 					api.PostMessage(channel, "マジ卍", slack.NewPostMessageParameters())
 				}
 			default:
 			}
 		}
 	}
+}
+
+type FileSaver struct {
+	name string
+	file *os.File
+	db   *sql.DB
+}
+
+func NewFileSaver(name string) FileSaver {
+	fileSaver := FileSaver{name: name}
+
+	file, err := os.OpenFile(name+".db", os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Println(err)
+		return fileSaver
+	}
+	fileSaver.file = file
+
+	db, err := sql.Open("sqlite3", name+".db")
+	if err != nil {
+		log.Println(err)
+		return fileSaver
+	}
+	fileSaver.db = db
+
+	query := "create table message ("
+	query += "id integer primary key autoincrement"
+	query += ", user varchar(255)"
+	query += ", text text"
+	query += ")"
+
+	fileSaver.dbExec(query)
+
+	return fileSaver
+}
+
+func (s *FileSaver) dbExec(q string) {
+	if _, err := s.db.Exec(q); err != nil {
+		log.Println(err)
+		return
+	}
+}
+
+func (s *FileSaver) Write(ev *slack.MessageEvent) {
+
+}
+
+func (s *FileSaver) Close() {
+	s.db.Close()
+	s.file.Close()
+	os.Remove(s.name)
 }
 
 type Flag struct {
