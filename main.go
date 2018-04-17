@@ -8,6 +8,9 @@ import (
 	"log"
 	"regexp"
 	"fmt"
+	"strings"
+	"strconv"
+	"time"
 )
 
 func main() {
@@ -69,7 +72,24 @@ func getHistory(api *slack.Client, channel string, start string, end string) {
 		log.Println(err)
 		return
 	}
-	log.Printf("%#v\n", history)
+	users := map[string]*slack.User{}
+	for _, message := range history.Messages {
+		user := message.User
+		if _, ok := users[user]; !ok {
+			userInfo, err := api.GetUserInfo(user)
+			if err != nil {
+				log.Println(err)
+				break
+			}
+			users[user] = userInfo
+		}
+		text := message.Text
+		unixTime := strings.Split(message.Timestamp, ".")
+		sec, _ := strconv.ParseInt(unixTime[0], 10, 64)
+		nsec, _ := strconv.ParseInt(unixTime[1], 10, 64)
+		log.Printf("[%s] user: %s, text: %s\n",
+			time.Unix(sec, nsec).Format("2006/1/2 15:04:05"), users[user].Profile.DisplayName, text)
+	}
 }
 
 type Flag struct {
