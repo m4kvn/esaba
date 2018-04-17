@@ -23,8 +23,9 @@ func main() {
 		log.Printf("%#v\n", client)
 	}
 
-	var isStart = false
-	var channel string
+	channels := map[string]string{}
+	params := slack.NewPostMessageParameters()
+	params.AsUser = true
 
 	rtm := api.NewRTM()
 	go rtm.ManageConnection()
@@ -34,30 +35,41 @@ func main() {
 		case msg := <-rtm.IncomingEvents:
 			switch ev := msg.Data.(type) {
 			case *slack.MessageEvent:
-				if isStart {
-					if ev.Channel != channel {
+				regexStr := fmt.Sprintf(`^(<@%s> 神降臨)$`, client.UserID)
+				if regexp.MustCompile(regexStr).MatchString(ev.Text) {
+					if _, ok := channels[ev.Channel]; !ok {
+						channels[ev.Channel] = ev.Timestamp
+						api.PostMessage(ev.Channel, "はじまるよ！", params)
 						break
 					}
-					regexStr := fmt.Sprintf(`^(<@%s> 終わり)$`, client.UserID)
-					if regexp.MustCompile(regexStr).MatchString(ev.Text) {
-						api.PostMessage(channel, ":innocent:", slack.NewPostMessageParameters())
-						isStart = false
-						channel = ""
-						break
-					}
-					log.Printf("%#v\n", ev)
-				} else {
-					regexStr := fmt.Sprintf(`^(<@%s> 神降臨)$`, client.UserID)
-					if regexp.MustCompile(regexStr).MatchString(ev.Text) {
-						isStart = true
-						channel = ev.Channel
-					}
-					api.PostMessage(channel, "マジ卍", slack.NewPostMessageParameters())
 				}
-			default:
+				regexStr = fmt.Sprintf(`^(<@%s> 終わり)$`, client.UserID)
+				if regexp.MustCompile(regexStr).MatchString(ev.Text) {
+					if _, ok := channels[ev.Channel]; ok {
+						startTime := channels[ev.Channel]
+						endTime := ev.Timestamp
+						getHistory(api, ev.Channel, startTime, endTime)
+						api.PostMessage(ev.Channel, "おわり！", params)
+						delete(channels, ev.Channel)
+						break
+					}
+				}
 			}
 		}
 	}
+}
+
+func getHistory(api *slack.Client, channel string, start string, end string) {
+	history, err := api.GetChannelHistory(channel, slack.HistoryParameters{
+		Latest: end,
+		Oldest: start,
+		Count:  1000,
+	})
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	log.Printf("%#v\n", history)
 }
 
 type Flag struct {
